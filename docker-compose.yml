@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api:
+    build: .
+    depends_on:
+      - rabbitmq
+      - mongo
+    environment:
+      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
+      - MONGO_URI=mongodb://mongo:27017
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+
+  worker:
+    build: .
+    command: celery -A app.tasks worker --loglevel=info
+    depends_on:
+      - rabbitmq
+      - mongo
+    environment:
+      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
+      - MONGO_URI=mongodb://mongo:27017
+    volumes:
+      - ./app:/app/app
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  mongo_data:
+

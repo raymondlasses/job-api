@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+celery
+pymongo
+python-dotenv
+docker
