@@ -1,4 +1,5 @@
 
+import socket
 import os
 import shlex
 import subprocess
@@ -22,23 +23,52 @@ def run_os_command(self, command: str):
     saved_id = save_result("os", command, output, meta=meta)
     return {"id": saved_id, "output_sample": output[:500]}
 
-@celery.task(bind=True, soft_time_limit=180)
-def run_katana(self, url: str):
+@celery.task(bind=True, soft_time_limit=120)
+def run_katana(self, url):
+    client = docker.APIClient(base_url="unix://var/run/docker.sock")
+    cmd = [
+        "katana", "-u", "-", "-jsonl",
+        "-d", "2",
+        "-ct", "10",
+        "-timeout", "10",
+        "-kf", "robotstxt",
+        "-rl", "100"
+    ]
+
     try:
-        client = docker.from_env(timeout=120)
-        client.images.pull("projectdiscovery/katana:latest")
-        logs = client.containers.run(
-            "projectdiscovery/katana:latest",
-            ["katana", "-u", url, "-json"],
-            remove=True,
-            stdout=True,
-            stderr=True
+        container = client.create_container(
+            image="projectdiscovery/katana:latest",
+            command=cmd,
+            stdin_open=True,
+            tty=False,
+            host_config=client.create_host_config(auto_remove=False)  # don't auto remove here
         )
-        raw = logs.decode("utf-8", errors="ignore")
-        count = sum([1 for line in raw.splitlines() if line.strip()])
-        result = {"count": count, "raw_sample": raw[:2000]}
-        saved_id = save_result("katana", url, result)
-        return {"id": saved_id, "count": count}
+        container_id = container.get("Id")
+        client.start(container=container_id)
+
+        sock = client.attach_socket(container=container_id, params={"stdin": 1, "stream": 1})
+        sock._sock.sendall(url.encode() + b"\n")
+        sock._sock.shutdown(1)
+
+        result = client.wait(container=container_id, timeout=120)
+
+        logs = client.logs(container=container_id, stdout=True, stderr=True).decode()
+
+        # Count URLs from logs
+        url_count = len([line for line in logs.splitlines() if line.startswith("http")])
+
+        # Now manually remove container
+        client.remove_container(container=container_id, force=True)
+
+        # Save only minimal info + url count, no full logs
+        saved_id = save_result(
+            "katana",
+            url,
+            "",  # no full logs stored to save DB space
+            meta={"exit_code": result.get("StatusCode"), "url_count": url_count}
+        )
+        return {"id": saved_id, "url_count": url_count, "output_sample": logs[:500]}
+
     except Exception as e:
-        saved_id = save_result("katana", url, {"error": str(e)})
-        return {"id": saved_id,  "error": str(e)}
+        return {"status": "error", "error": str(e)}
+
