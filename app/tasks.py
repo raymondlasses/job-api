@@ -41,7 +41,7 @@ def run_katana(self, url):
             command=cmd,
             stdin_open=True,
             tty=False,
-            host_config=client.create_host_config(auto_remove=False)  # don't auto remove here
+            host_config=client.create_host_config(auto_remove=False)
         )
         container_id = container.get("Id")
         client.start(container=container_id)
@@ -54,17 +54,14 @@ def run_katana(self, url):
 
         logs = client.logs(container=container_id, stdout=True, stderr=True).decode()
 
-        # Count URLs from logs
         url_count = len([line for line in logs.splitlines() if line.startswith("http")])
 
-        # Now manually remove container
         client.remove_container(container=container_id, force=True)
 
-        # Save only minimal info + url count, no full logs
         saved_id = save_result(
             "katana",
             url,
-            "",  # no full logs stored to save DB space
+            "", 
             meta={"exit_code": result.get("StatusCode"), "url_count": url_count}
         )
         return {"id": saved_id, "url_count": url_count, "output_sample": logs[:500]}
