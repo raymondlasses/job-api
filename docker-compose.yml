@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   rabbitmq:
     image: rabbitmq:3.11-management
@@ -40,6 +38,7 @@ services:
     environment:
       - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
       - MONGO_URI=mongodb://mongo:27017
+      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
       - ./app:/app/app
       - /var/run/docker.sock:/var/run/docker.sock
